@@ -6,6 +6,9 @@ from motor.motor_asyncio import (AsyncIOMotorClient, AsyncIOMotorCollection,
                                  AsyncIOMotorDatabase)
 
 logging.basicConfig(level=logging.DEBUG, format='%(threadName)s: %(message)s')
+NOTIFICATIONS_COLLECTION_NAME = 'notifications'
+SPENDINGS_DB_NAME = 'spendings'
+SPENDINGS_COLLECTION_NAME = 'items'
 
 
 @dataclass
@@ -35,7 +38,7 @@ class MongoClient():
                     f"cambió de '{notification.get('OldValue')}' a '{notification.get('NewValue')}'"
         }
 
-        self.get_collection('spendings', 'notifications').update_one(
+        self.get_collection(SPENDINGS_DB_NAME, NOTIFICATIONS_COLLECTION_NAME).update_one(
             {'_id': notification.get('_id')}, {'$set': {'IsSent': True}}
         )
 
@@ -51,7 +54,7 @@ class MongoClient():
                 "IsSent": False
                 } for value in diff if value[1] != item.get(value[0])]
 
-        self.get_collection('spendings', 'notifications').insert_many(notifications)
+        self.get_collection(SPENDINGS_DB_NAME, NOTIFICATIONS_COLLECTION_NAME).insert_many(notifications)
 
     async def create_updates_notifications(self, collection: AsyncIOMotorCollection, items: list) -> NoReturn:
         for db_item in await collection.find({}).to_list(length=None):
@@ -84,7 +87,7 @@ class MongoClient():
         return [item for item in items if item.get('Reference') not in references]
 
     async def save_items(self, incomming_items: list):
-        collection = self.get_collection('spendings', 'items')
+        collection = self.get_collection(SPENDINGS_DB_NAME, SPENDINGS_COLLECTION_NAME)
 
         items_to_insert = await self.get_items_to_insert(collection, incomming_items)
 
@@ -92,14 +95,15 @@ class MongoClient():
 
         await self.create_updates_notifications(collection, incomming_items)
 
-        pending_notifications = self.get_collection('spendings', 'notifications').find({"IsSent": {"$ne": True}})
+        notification_collection = self.get_collection(SPENDINGS_DB_NAME, NOTIFICATIONS_COLLECTION_NAME)
+        pending_notifications = notification_collection.find({"IsSent": {"$ne": True}})
         for item_notification in await pending_notifications.to_list(length=None):
             # Notify
             await self.send_notifications(item_notification)
 
             # Update
 
-            self.get_collection('spendings', 'items').update_one(
+            self.get_collection(SPENDINGS_DB_NAME, SPENDINGS_COLLECTION_NAME).update_one(
                 {'Reference': item_notification.get('Reference')},
                 {
                     '$set': {
