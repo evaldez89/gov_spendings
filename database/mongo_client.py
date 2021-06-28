@@ -106,15 +106,7 @@ class MongoClient():
 
         return await collection.aggregate(group_pipeline).to_list(length=None)
 
-    async def save_items(self, incomming_items: list):
-        collection = self.get_collection(SPENDINGS_DB_NAME, SPENDINGS_COLLECTION_NAME)
-
-        items_to_insert = await self.get_items_to_insert(collection, incomming_items)
-
-        collection.insert_many(items_to_insert)
-
-        await self.create_updates_notifications(collection, incomming_items)
-
+    async def send_pending_notifications(self):
         notification_collection = self.get_collection(SPENDINGS_DB_NAME, NOTIFICATIONS_COLLECTION_NAME)
         pending_notifications = notification_collection.find({"IsSent": {"$ne": True}})
         for item_notification in await pending_notifications.to_list(length=None):
@@ -122,7 +114,6 @@ class MongoClient():
             await self.send_notifications(item_notification)
 
             # Update
-
             self.get_collection(SPENDINGS_DB_NAME, SPENDINGS_COLLECTION_NAME).update_one(
                 {'Reference': item_notification.get('Reference')},
                 {
@@ -131,3 +122,12 @@ class MongoClient():
                     }
                 }
             )
+
+    async def save_items(self, incomming_items: list):
+        collection = self.get_collection(SPENDINGS_DB_NAME, SPENDINGS_COLLECTION_NAME)
+
+        items_to_insert = await self.get_items_to_insert(collection, incomming_items)
+
+        collection.insert_many(items_to_insert)
+
+        await self.create_updates_notifications(collection, incomming_items)
