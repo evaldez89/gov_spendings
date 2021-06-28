@@ -86,6 +86,26 @@ class MongoClient():
 
         return [item for item in items if item.get('Reference') not in references]
 
+    async def get_spending_entities(self):
+        collection = self.get_collection(SPENDINGS_DB_NAME, SPENDINGS_COLLECTION_NAME)
+        group_pipeline = [
+            {
+                "$group": {
+                    "_id": "$ContractingAuthority",
+                    "ActiveSpendings": {"$sum": 1}
+                    }
+            },
+            {
+                "$project": {
+                    "ContractingAuthority": "$_id",
+                    "ActiveSpendings": 1,
+                    "_id": 0
+                }
+            }
+        ]
+
+        return await collection.aggregate(group_pipeline).to_list(length=None)
+
     async def save_items(self, incomming_items: list):
         collection = self.get_collection(SPENDINGS_DB_NAME, SPENDINGS_COLLECTION_NAME)
 
