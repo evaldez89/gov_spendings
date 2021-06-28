@@ -1,7 +1,10 @@
 import logging
 from dataclasses import dataclass, field
 from typing import List, NoReturn
+from decouple import config
 
+from datetime import datetime
+from pymongo import ReturnDocument
 from motor.motor_asyncio import (AsyncIOMotorClient, AsyncIOMotorCollection,
                                  AsyncIOMotorDatabase)
 
@@ -9,6 +12,9 @@ logging.basicConfig(level=logging.DEBUG, format='%(threadName)s: %(message)s')
 NOTIFICATIONS_COLLECTION_NAME = 'notifications'
 SPENDINGS_DB_NAME = 'spendings'
 SPENDINGS_COLLECTION_NAME = 'items'
+ENTITIES_COLLECTION_NAME = 'entities'
+TILDE_REPLACEMENTS = config('TILDE_REPLACEMENTS',
+                            cast=lambda value: {k: v for k, v in [pair.split(':') for pair in value.split(',')]})
 
 
 @dataclass
@@ -106,6 +112,31 @@ class MongoClient():
 
         return await collection.aggregate(group_pipeline).to_list(length=None)
 
+    async def insert_spending_entities(self):
+        collection = self.get_collection(SPENDINGS_DB_NAME, ENTITIES_COLLECTION_NAME)
+        collection.insert_one({})  # In case collection is empty
+        for entitity in await self.get_spending_entities():
+            entitity_name = entitity.get('ContractingAuthority')
+
+            # Normalize code name
+            code_name = entitity_name.lower().replace(' ', '-')
+            code_name = ''.join([TILDE_REPLACEMENTS.get(letter, letter) for letter in code_name])
+
+            collection.find_one_and_update(
+                {'ContractingAuthority': entitity_name},
+                {
+                    '$set': {
+                        'CodeName': code_name,
+                        'ActiveSpendings': entitity.get('ActiveSpendings', 0),
+                        'LastUpdate': f"{datetime.today():%Y-%m-%dT%H:%M:%S}",
+                    }
+                },
+                return_document=ReturnDocument.AFTER,
+                upsert=True,
+            )
+
+        await collection.delete_many({'CodeName': None})
+
     async def send_pending_notifications(self):
         notification_collection = self.get_collection(SPENDINGS_DB_NAME, NOTIFICATIONS_COLLECTION_NAME)
         pending_notifications = notification_collection.find({"IsSent": {"$ne": True}})
@@ -129,5 +160,7 @@ class MongoClient():
         items_to_insert = await self.get_items_to_insert(collection, incomming_items)
 
         collection.insert_many(items_to_insert)
+
+        await self.insert_spending_entities()
 
         await self.create_updates_notifications(collection, incomming_items)
