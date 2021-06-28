@@ -3,3 +3,5 @@ httpx==0.18.1
 asyncio==3.4.3
 python-decouple==3.4
 motor==2.4.0
+fastapi==0.65.2
+uvicorn==0.14.0
