@@ -93,7 +93,16 @@ class MongoClient():
         return [item for item in items if item.get('Reference') not in references]
 
     async def get_spending_entities(self):
-        collection = self.get_collection(SPENDINGS_DB_NAME, SPENDINGS_COLLECTION_NAME)
+        collection = self.get_collection(SPENDINGS_DB_NAME, ENTITIES_COLLECTION_NAME)
+        projection = {
+            'CodeName': True, 'ContractingAuthority': True,
+            'ActiveSpendings': True, 'LastUpdate': True,
+            '_id': False
+        }
+        return await collection.find({}, projection=projection).to_list(length=None)
+
+    async def insert_spending_entities(self):
+        items_collection = self.get_collection(SPENDINGS_DB_NAME, SPENDINGS_COLLECTION_NAME)
         group_pipeline = [
             {
                 "$group": {
@@ -110,19 +119,17 @@ class MongoClient():
             }
         ]
 
-        return await collection.aggregate(group_pipeline).to_list(length=None)
+        entities = self.get_collection(SPENDINGS_DB_NAME, ENTITIES_COLLECTION_NAME)
+        entities.insert_one({})  # In case collection is empty
 
-    async def insert_spending_entities(self):
-        collection = self.get_collection(SPENDINGS_DB_NAME, ENTITIES_COLLECTION_NAME)
-        collection.insert_one({})  # In case collection is empty
-        for entitity in await self.get_spending_entities():
+        for entitity in await items_collection.aggregate(group_pipeline).to_list(length=None):
             entitity_name = entitity.get('ContractingAuthority')
 
             # Normalize code name
             code_name = entitity_name.lower().replace(' ', '-')
             code_name = ''.join([TILDE_REPLACEMENTS.get(letter, letter) for letter in code_name])
 
-            collection.find_one_and_update(
+            entities.find_one_and_update(
                 {'ContractingAuthority': entitity_name},
                 {
                     '$set': {
@@ -135,7 +142,7 @@ class MongoClient():
                 upsert=True,
             )
 
-        await collection.delete_many({'CodeName': None})
+        await entities.delete_many({'CodeName': None})
 
     async def send_pending_notifications(self):
         notification_collection = self.get_collection(SPENDINGS_DB_NAME, NOTIFICATIONS_COLLECTION_NAME)
