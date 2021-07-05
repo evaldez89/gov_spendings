@@ -21,7 +21,7 @@ async def get_json_response():
     return to_json(content)
 
 
-async def get_json_response_from_test_file():
+def get_json_response_from_test_file():
     content = None
     with open("tests_files/Buscar proceso.html") as fp:
         content = BeautifulSoup(fp, 'html.parser')
